@@ -7,7 +7,7 @@
    * The `hasura quickstart` command clones the project repository to your local system and also creates a **free Hasura cluster** where the project will be hosted for free.
    * A git remote (called hasura) is created and initialized with your project directory.
    * `git push hasura master` builds and deploys the project to the created Hasura cluster.
-* The python-flask app is deployed as a microservice called **app**.
+* The php-laravel app is deployed as a microservice called **app**.
    * Run the below command to open your app:
 ``` shell
  $ hasura microservice open app
@@ -15,46 +15,9 @@
 
 ### Making changes to your source code and deploying
 
-* To make changes to the app, browse to `/microservices/app/src` and edit the python files according to your requirements.
-* For example, make changes to `server.py` or to `templates/index.html` to change the landing page.
+* To make changes to the app, browse to `/microservices/app/src` and edit the php files according to your requirements.
+* For example, make changes to `resources/views/welcome.blade.php` to change the landing page.
 * Commit the changes, and run `git push hasura master` to deploy the changes.
-
-
-## Adding backend features
-
-If you want to continue vanilla python development, you can skip this section. 
-
-&nbsp;
-
-Hasura makes it easy to add some common backend features to your apps:
-- Add auth via different providers [[features]](https://hasura.io/features/auth)
-- Integrate with a database        [[features]](https://hasura.io/features/data)
-- Add file upload/download         [[features]](https://hasura.io/features/filestore) 
-
-### Examples
-
-Open your app and head to the different example routes:
-
-```bash
-# Open your app in a browser
-$ hasura microservice open app
-
-# Head to any of these URLs on the app
-/examples/data
-/examples/auth
-/examples/filestore
-```
-
-### API console
-
-Hasura gives you a web UI to manage your database and users. You can also explore the Hasura APIs and automatically generate API code in the language of your choice.
-
-#### Run this command inside the project directory
-
-```bash
-$ hasura api-console
-```
-![api-explorer.png](https://filestore.hasura.io/v1/file/463f07f7-299d-455e-a6f8-ff2599ca8402)
 
 
 ## View server logs
@@ -72,98 +35,157 @@ $ hasura microservice logs app
 
 ## Adding dependencies
 
-### Add a python dependency
+### Add a php dependency
 
-In order use new python package in your app, you can just add it to `src/requirements.txt` and the git-push or docker build process will
-automatically install the package for you. If the `pip install` steps thorw some errors in demand of a system dependency,
+In order use new php package in your app, you can just add it to `src/composer.json` and the git-push or docker build process will
+automatically install the package for you. If the `composer install` steps throw some errors in demand of a system dependency,
 you can install those by adding it to the `Dockerfile` at the correct place.
 
-```python
-# src/requirements.txt:
+```json
+# src/composer.json:
 
-flask
-requests
-gunicorn
-
-# add your new packages one per each line
+{
+    "name": "laravel/laravel",
+    "description": "The Laravel Framework.",
+    "keywords": ["framework", "laravel"],
+    "license": "MIT",
+    "type": "project",
+    "require": {
+        "php": ">=7.0.0",
+        "fideloper/proxy": "~3.3",
+        "laravel/framework": "5.5.*",
+        "laravel/tinker": "~1.0"
+    },
+    "require-dev": {
+        "filp/whoops": "~2.0",
+        "fzaninotto/faker": "~1.4",
+        "mockery/mockery": "~1.0",
+        "phpunit/phpunit": "~6.0",
+        "symfony/thanks": "^1.0"
+    },
+    "autoload": {
+        "classmap": [
+            "database/seeds",
+            "database/factories"
+        ],
+        "psr-4": {
+            "App\\": "app/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "dont-discover": [
+            ]
+        }
+    },
+    "scripts": {
+        "post-root-package-install": [
+            "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
+        ],
+        "post-create-project-cmd": [
+            "@php artisan key:generate"
+        ],
+        "post-autoload-dump": [
+            "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
+            "@php artisan package:discover"
+        ]
+    },
+    "config": {
+        "preferred-install": "dist",
+        "sort-packages": true,
+        "optimize-autoloader": true
+    }
+}
 ```
 
 ### Add a system dependency
 
-The base image used in this boilerplate is [python:3](https://hub.docker.com/_/python/) debian. Hence, all debian packages are available for installation.
+The base image used in this boilerplate is [php:7.1.5-apache](https://hub.docker.com/_/php/) debian. Hence, all debian packages are available for installation.
 You can add a package by mentioning it in the `Dockerfile` among the existing `apt-get install` packages.
 
 ```dockerfile
 # Dockerfile
 
-FROM python:3
+#start with our base image (the foundation) - version 7.1.5
+FROM php:7.1.5-apache
 
-# install required debian packages
-# add any package that is required after `python-dev`, end the line with \
+#install all the system dependencies and enable PHP modules
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    python-dev \
-&& rm -rf /var/lib/apt/lists/*
+      libicu-dev \
+      libpq-dev \
+      libmcrypt-dev \
+      git \
+      zip \
+      unzip \
+    && rm -r /var/lib/apt/lists/* \
+    && docker-php-ext-install \
+      intl \
+      mbstring \
+      mcrypt \
+      pcntl \
+      pdo_pgsql \
+      pgsql \
+      zip \
+      opcache
 
-# install requirements
-COPY src/requirements.txt /tmp/requirements.txt
-RUN pip3 install -r /tmp/requirements.txt
+#install composer
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/bin/ --filename=composer
 
-# set /app as working directory
-WORKDIR /app
+#set our application folder as an environment variable
+ENV APP_HOME /var/www/html
 
-# copy current directory to /app
-COPY . /app
+#change uid and gid of apache to docker user uid/gid
+RUN usermod -u 1000 www-data && groupmod -g 1000 www-data
 
-# run gunicorn server
-# port is configured through the gunicorn config file
-CMD ["gunicorn", "--config", "./conf/gunicorn_config.py", "src:app"]
+#change the web_root to laravel /var/www/html/public folder
+RUN sed -i -e "s/html/html\/public/g" /etc/apache2/sites-enabled/000-default.conf
+
+# enable apache module rewrite
+RUN a2enmod rewrite
+
+#copy the composer dependencies only
+COPY src/composer.json $APP_HOME/composer.json
+
+# Install all PHP dependencies without the autoloader
+RUN composer install --no-ansi --no-dev --no-interaction --no-autoloader
+
+#set the port to 8080
+RUN sed -i -e "s/VirtualHost \*:80/VirtualHost *:8080/g" /etc/apache2/sites-enabled/000-default.conf
+RUN sed -i -e "s/Listen 80/Listen 8080/g" /etc/apache2/ports.conf
+
+#Copy the app
+COPY src $APP_HOME/
+
+# install all PHP dependencies
+RUN composer install --no-ansi --no-dev --no-interaction --optimize-autoloader \
+            && rm -rf /root/.composer/cache
+
+#change ownership of our applications
+RUN chown -R www-data:www-data $APP_HOME
 
 ```
 
-## Deploying your existing Flask app
+## Deploying your existing Laravel app
 
-Read this section if you already have a Flask app and want to deploy it on Hasura.
+Read this section if you already have a Laravel app and want to deploy it on Hasura.
 
-- Replace the contents of `src/` directory with your own app's python files.
+- Replace the contents of `src/` directory with your own app's php files.
 - Leave `k8s.yaml`, `Dockerfile` and `conf/` as it is.
-- Make sure there is already a `requirements.txt` file present inside the new `src/` indicating all your python dependencies (see [above](#add-a-python-dependency)).
+- Make sure there is already a `composer.json` file present inside the new `src/` indicating all your php dependencies (see [above](#add-a-php-dependency)).
 - If there are any system dependencies, add and configure them in `Dockerfile` (see [above](#add-a-system-dependency)).
-- If the Flask app is not called `app`, change the last line in `Dockerfile` reflect the same.
-  For example, if the app is called `backend`, the `CMD` line in `Dockerfile` will become:
-  ```dockerfile
-  CMD ["gunicorn", "--config", "./conf/gunicorn_config.py", "src:backend"]
-  ```
 
 ## Local development
 
-Running your python-flask code locally works as it usually would. 
+Running your php-laravel code locally works as it usually would.
 
-### Running a development server with auto-reload
-
-```bash
-# OPTIONAL: http://docs.python-guide.org/en/latest/dev/virtualenvs/
-# OPTIONAL: setup pipenv or virtualenv and activate it and update .gitignore
-
-# go to app directory
-$ cd microservices/app
-
-# install dependencies
-$ pip install -r src/requirements.txt
-
-# run the development server (change bind address if it's already used)
-$ gunicorn --reload --bind "0.0.0.0:8080" src:app
-```
-
-Go to [http://localhost:8080](http://localhost:8080) using your
-browser to see the development version on the app. You can keep the
-gunicorn server running and when you edit source code and save the
-files, the server will be reload the new code automatically.
-
-**Note**: You can also build and test with docker locally.
 
 ### Handling dependencies on other microservices
-Your flask app will at some point depend on other microservices like the database,
+Your laravel app will at some point depend on other microservices like the database,
 or Hasura APIs. In this case, when you're developing locally, you'll have to change your
 the endpoints you're using. Ideally, you can use an environment variable to switch between
 'DEVELOPMENT' or 'PRODUCTION' mode and use different endpoints.
@@ -171,20 +193,22 @@ the endpoints you're using. Ideally, you can use an environment variable to swit
 This is something that you're already probably familiar with if you've worked with databases
 before.
 
-#### Flask app running on the cluster (after deployment)
+#### Laravel app running on the cluster (after deployment)
 Example endpoints:
 ```
-if not os.getenv('DEVELOPMENT'):
-  postgres = 'postgres.hasura' #postgres)
-  dataUrl  = 'data.hasura'     #Hasura data APIs)
+if (App::environment('production')) {
+  $postgres = 'postgres.hasura' #postgres
+  $dataUrl  = 'data.hasura'     #Hasura data APIs
+}
 ```
 
-#### Flask app running locally (during dev or testing)
+#### Laravel app running locally (during dev or testing)
 Example endpoints:
 ```
-else:
-  postgres = 'localhost:5432' #postgres)
-  dataUrl  = 'localhost:9000'     #Hasura data APIs)
+else {
+  $postgres = 'localhost:5432'   #postgres
+  $dataUrl  = 'localhost:9000'   #Hasura data APIs
+}
 ```
 
 And in the background, you will have to expose your Hasura microservices on these ports locally:
