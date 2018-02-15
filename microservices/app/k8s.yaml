@@ -33,7 +33,7 @@ items:
             valueFrom:
               secretKeyRef:
                 name: hasura-secrets
-                key: postgress.password
+                key: postgres.password
         securityContext: {}
         terminationGracePeriodSeconds: 0
   status: {}
